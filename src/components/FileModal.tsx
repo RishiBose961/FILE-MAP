@@ -30,6 +30,7 @@ export function FileModal({
   onSave,
   onClose,
 }: FileModalProps) {
+  const [sno, setSno] = useState(existing?.sno ?? '');
   const [title, setTitle] = useState(existing?.title ?? '');
   const [fileCode, setFileCode] = useState(existing?.fileCode ?? '');
   const [locationId, setLocationId] = useState(
@@ -58,6 +59,7 @@ export function FileModal({
 
     onSave({
       id: existing?.id ?? generateId('file'),
+      sno: sno.trim() || undefined,
       title: title.trim(),
       fileCode: fileCode.trim().toUpperCase(),
       category: category.trim() || 'General',
@@ -84,15 +86,13 @@ export function FileModal({
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-3.5">
-          <div className="grid grid-cols-3 gap-3">
-            <label className="col-span-2 flex flex-col gap-1.5">
-              <span className="text-xs font-semibold text-foreground">File Name *</span>
+          <div className="grid grid-cols-4 gap-3">
+            <label className="flex flex-col gap-1.5">
+              <span className="text-xs font-semibold text-foreground">S.No</span>
               <Input
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="e.g., GST Returns FY 2025-26"
-                required
-                autoFocus
+                value={sno}
+                onChange={(e) => setSno(e.target.value)}
+                placeholder="e.g., 1"
               />
             </label>
 
@@ -102,6 +102,17 @@ export function FileModal({
                 value={fileCode}
                 onChange={(e) => setFileCode(e.target.value)}
                 placeholder="e.g., FIN-042"
+              />
+            </label>
+
+            <label className="col-span-2 flex flex-col gap-1.5">
+              <span className="text-xs font-semibold text-foreground">File Name *</span>
+              <Input
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="e.g., GST Returns FY 2025-26"
+                required
+                autoFocus
               />
             </label>
           </div>

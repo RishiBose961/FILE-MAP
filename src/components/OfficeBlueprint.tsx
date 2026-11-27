@@ -117,7 +117,7 @@ function RoomOpeningSymbol({
         <div
           className={cn(
             'bg-sky-500/70',
-            isHorizontal ? 'h-[2px] w-full' : 'h-full w-[2px]'
+            isHorizontal ? 'h-0.5 w-full' : 'h-full w-0.5'
           )}
         />
       </div>
@@ -496,7 +496,7 @@ export function OfficeBlueprint({
           ) : (
             <div
               ref={canvasRef}
-              className="relative min-h-[680px] min-w-[920px] rounded-xl border-2 border-sky-200 bg-[#f8fbff] shadow-inner"
+              className="relative min-h-170 min-w-230 rounded-xl border-2 border-sky-200 bg-[#f8fbff] shadow-inner"
               style={{
                 backgroundImage:
                   'linear-gradient(to right, rgba(14, 165, 233, 0.10) 1px, transparent 1px), linear-gradient(to bottom, rgba(14, 165, 233, 0.10) 1px, transparent 1px)',

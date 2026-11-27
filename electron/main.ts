@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, shell, Tray } from 'electron';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -6,6 +6,7 @@ import * as XLSX from 'xlsx';
 import { BsonStore } from './bsonStore';
 import { SyncManager } from './syncManager';
 import type {
+  AppSettings,
   ExcelImportRow,
   OfficeFile,
   OfficeLocation,
@@ -23,8 +24,11 @@ export const RENDERER_DIST = path.join(process.env.APP_ROOT, 'dist')
 process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL ? path.join(process.env.APP_ROOT, 'public') : RENDERER_DIST
 
 let win: BrowserWindow | null = null
+let tray: Tray | null = null
 let store: BsonStore | null = null
 let syncManager: SyncManager | null = null
+let appSettings: AppSettings = { autoStartOnBoot: false, runInBackground: true }
+let isQuitting = false
 
 function getStore(): BsonStore {
   if (!store) {
@@ -88,6 +92,21 @@ function registerIpcHandlers() {
 
   ipcMain.handle('filemap:sync-now', async () => {
     return getSyncManager().syncNow()
+  })
+
+  ipcMain.handle('filemap:get-app-settings', async () => {
+    return appSettings
+  })
+
+  ipcMain.handle('filemap:set-app-settings', async (_event, next: AppSettings) => {
+    appSettings = {
+      autoStartOnBoot: Boolean(next.autoStartOnBoot),
+      runInBackground: Boolean(next.runInBackground),
+    }
+    await getStore().saveAppSettings(appSettings)
+    applyAutoStart(appSettings.autoStartOnBoot)
+    updateTrayMenu()
+    return appSettings
   })
 
   ipcMain.handle('filemap:storage-info', async () => {
@@ -215,28 +234,32 @@ function registerIpcHandlers() {
           if (!sno && ['sno', 'slno', 'srno', 'serial', 'serialno', 'serialnumber'].includes(nk)) {
             sno = val
           } else if (
-            !title &&
-            ['filename', 'name', 'title', 'file', 'document', 'documentname'].includes(nk)
-          ) {
-            title = val
-          } else if (
             !fileCode &&
-            ['filenumber', 'fileno', 'filecode', 'number', 'code', 'ref', 'refno'].includes(nk)
+            ['filenumber', 'fileno', 'filecode', 'filenum', 'fnum', 'fno', 'docno', 'number', 'code', 'ref', 'refno'].includes(nk)
           ) {
             fileCode = val
+          } else if (
+            !title &&
+            ['filename', 'name', 'title', 'particulars', 'subject', 'description', 'details', 'document', 'documentname', 'file'].includes(nk)
+          ) {
+            title = val
           }
         }
 
-        // Positional fallback if headers didn't match standard names
+        // Positional fallback only for columns not already matched by header
         if (!title && entries.length >= 2) {
-          const vals = entries.map(([, v]) => String(v ?? '').trim())
-          if (entries.length >= 3) {
-            sno = sno || vals[0]
-            title = vals[1]
-            fileCode = fileCode || vals[2]
-          } else {
-            title = vals[0]
-            fileCode = fileCode || vals[1]
+          const unusedVals = entries
+            .map(([, v]) => String(v ?? '').trim())
+            .filter((val) => val !== sno && val !== fileCode)
+          if (!sno && !fileCode && entries.length >= 3) {
+            sno = unusedVals[0] ?? ''
+            title = unusedVals[1] ?? ''
+            fileCode = unusedVals[2] ?? ''
+          } else if (unusedVals.length > 0) {
+            title = unusedVals[0]
+            if (!fileCode && unusedVals.length > 1) {
+              fileCode = unusedVals[1]
+            }
           }
         }
 
@@ -265,21 +288,130 @@ function registerIpcHandlers() {
   })
 }
 
-function createWindow() {
+function applyAutoStart(enabled: boolean) {
+  try {
+    app.setLoginItemSettings({
+      openAtLogin: enabled,
+      path: process.execPath,
+      args: enabled ? ['--hidden'] : [],
+    })
+  } catch (err) {
+    console.error('Failed to update login item settings:', err)
+  }
+}
+
+function createTrayIcon() {
+  const size = 16
+  const buf = Buffer.alloc(size * size * 4)
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const idx = (y * size + x) * 4
+      const isBorder = x === 0 || y === 0 || x === size - 1 || y === size - 1
+      const isCenter = x >= 5 && x <= 10 && y >= 5 && y <= 10
+      if (isBorder) {
+        // Dark indigo border (#3730a3)
+        buf[idx] = 55
+        buf[idx + 1] = 48
+        buf[idx + 2] = 163
+        buf[idx + 3] = 255
+      } else if (isCenter) {
+        // Crisp white inner square
+        buf[idx] = 255
+        buf[idx + 1] = 255
+        buf[idx + 2] = 255
+        buf[idx + 3] = 255
+      } else {
+        // Indigo fill (#4f46e5)
+        buf[idx] = 79
+        buf[idx + 1] = 70
+        buf[idx + 2] = 229
+        buf[idx + 3] = 255
+      }
+    }
+  }
+  return nativeImage.createFromBitmap(buf, { width: size, height: size })
+}
+
+function updateTrayMenu() {
+  if (!tray) return
+  const showApp = () => {
+    if (!win) {
+      createWindow(false)
+    } else {
+      win.show()
+      win.focus()
+    }
+  }
+
+  const contextMenu = Menu.buildFromTemplate([
+    { label: 'Open FileMap', click: showApp },
+    {
+      label: 'Start on System Boot',
+      type: 'checkbox',
+      checked: appSettings.autoStartOnBoot,
+      click: async (menuItem) => {
+        appSettings = { ...appSettings, autoStartOnBoot: menuItem.checked }
+        await getStore().saveAppSettings(appSettings)
+        applyAutoStart(appSettings.autoStartOnBoot)
+        win?.webContents.send('filemap:app-settings-changed', appSettings)
+      },
+    },
+    { type: 'separator' },
+    {
+      label: 'Quit FileMap',
+      click: () => {
+        isQuitting = true
+        void syncManager?.dispose()
+        app.quit()
+      },
+    },
+  ])
+  tray.setContextMenu(contextMenu)
+}
+
+function createTray() {
+  if (tray) return
+  const icon = createTrayIcon()
+  tray = new Tray(icon)
+  tray.setToolTip('FileMap — Office File Locator')
+
+  const showApp = () => {
+    if (!win) {
+      createWindow(false)
+    } else {
+      win.show()
+      win.focus()
+    }
+  }
+
+  updateTrayMenu()
+  tray.on('click', showApp)
+  tray.on('double-click', showApp)
+}
+
+function createWindow(startHidden = false) {
   win = new BrowserWindow({
     title: 'FileMap — Office File Locator',
     width: 1240,
     height: 800,
     minWidth: 940,
     minHeight: 620,
+    show: !startHidden,
     backgroundColor: '#f8fafc',
-    icon: path.join(process.env.VITE_PUBLIC, 'electron-vite.svg'),
+    icon: path.join(process.env.VITE_PUBLIC, 'logomain.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.mjs'),
     },
   })
 
   win.setMenuBarVisibility(false)
+
+  win.on('close', (e) => {
+    if (!isQuitting && appSettings.runInBackground) {
+      e.preventDefault()
+      win?.hide()
+    }
+  })
 
   if (VITE_DEV_SERVER_URL) {
     win.loadURL(VITE_DEV_SERVER_URL)
@@ -288,8 +420,12 @@ function createWindow() {
   }
 }
 
+app.on('before-quit', () => {
+  isQuitting = true
+})
+
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
+  if (process.platform !== 'darwin' && !appSettings.runInBackground) {
     void syncManager?.dispose()
     app.quit()
     win = null
@@ -298,12 +434,18 @@ app.on('window-all-closed', () => {
 
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) {
-    createWindow()
+    createWindow(false)
+  } else {
+    win?.show()
   }
 })
 
 app.whenReady().then(async () => {
   registerIpcHandlers()
+  appSettings = await getStore().loadAppSettings()
+  applyAutoStart(appSettings.autoStartOnBoot)
   await getSyncManager().init()
-  createWindow()
+  createTray()
+  const startHidden = process.argv.includes('--hidden') && appSettings.runInBackground
+  createWindow(startHidden)
 })

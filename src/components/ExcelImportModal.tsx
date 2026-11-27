@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Download, FileSpreadsheet, Upload } from 'lucide-react';
+import { ArrowLeftRight, Download, FileSpreadsheet, Upload } from 'lucide-react';
 import type { ExcelImportRow, OfficeLocation } from '../types';
 import { FILE_CATEGORIES, getSortedLocationOptions } from '../utils/fileMapHelpers';
 import { Button } from '@/components/ui/button';
@@ -62,6 +62,18 @@ export function ExcelImportModal({
     }
     setFileName(res.fileName ?? 'Uploaded Excel');
     setRows(res.rows);
+  };
+
+  const handleSwapColumns = () => {
+    setRows((prev) =>
+      prev
+        ? prev.map((r) => ({
+            ...r,
+            title: r.fileCode || 'Untitled',
+            fileCode: r.title.toUpperCase(),
+          }))
+        : prev
+    );
   };
 
   const handleDownloadSample = async () => {
@@ -211,6 +223,22 @@ export function ExcelImportModal({
                 </span>
               </label>
             )}
+
+            {/* Preview Header with Swap Button */}
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-muted-foreground">
+                Preview ({rows.length} rows)
+              </span>
+              <Button
+                type="button"
+                size="xs"
+                variant="outline"
+                onClick={handleSwapColumns}
+              >
+                <ArrowLeftRight size={12} />
+                Swap File Name ↔ File Number
+              </Button>
+            </div>
 
             {/* Preview Table */}
             <div className="max-h-60 overflow-y-auto rounded-lg border border-border">

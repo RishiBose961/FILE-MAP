@@ -1,5 +1,6 @@
 import { ipcRenderer, contextBridge } from 'electron'
 import type {
+  AppSettings,
   FileMapApi,
   FileMapData,
   OfficeFile,
@@ -24,6 +25,9 @@ const fileMapApi: FileMapApi = {
   getSyncStatus: () => ipcRenderer.invoke('filemap:sync-status'),
   setSyncConfig: (config: SyncConfig) =>
     ipcRenderer.invoke('filemap:set-sync-config', config),
+  getAppSettings: () => ipcRenderer.invoke('filemap:get-app-settings'),
+  setAppSettings: (settings: AppSettings) =>
+    ipcRenderer.invoke('filemap:set-app-settings', settings),
   downloadFromAdmin: () => ipcRenderer.invoke('filemap:download-from-admin'),
   syncNow: () => ipcRenderer.invoke('filemap:sync-now'),
   onDataUpdated: (cb: (data: FileMapData) => void) => {

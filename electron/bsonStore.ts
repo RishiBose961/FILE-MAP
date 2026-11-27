@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import type {
+  AppSettings,
   FileMapData,
   OfficeFile,
   OfficeLocation,
@@ -100,6 +101,7 @@ export class BsonStore {
   private readonly legacyPath: string;
   private readonly queuePath: string;
   private readonly syncConfigPath: string;
+  private readonly appSettingsPath: string;
 
   constructor(dataDir: string) {
     this.dataDir = dataDir;
@@ -108,6 +110,7 @@ export class BsonStore {
     this.legacyPath = path.join(dataDir, 'filemap-data.bson');
     this.queuePath = path.join(dataDir, 'sync-queue.bson');
     this.syncConfigPath = path.join(dataDir, 'sync-config.bson');
+    this.appSettingsPath = path.join(dataDir, 'app-settings.bson');
   }
 
   getFolderPath(): string {
@@ -331,6 +334,29 @@ export class BsonStore {
     await this.writeAtomicBson(
       this.syncConfigPath,
       config as unknown as Record<string, unknown>
+    );
+  }
+
+  async loadAppSettings(): Promise<AppSettings> {
+    if (!existsSync(this.appSettingsPath)) {
+      return { autoStartOnBoot: false, runInBackground: true };
+    }
+    try {
+      const buf = await fs.readFile(this.appSettingsPath);
+      const doc = BSON.deserialize(buf) as Partial<AppSettings>;
+      return {
+        autoStartOnBoot: Boolean(doc.autoStartOnBoot),
+        runInBackground: doc.runInBackground !== false,
+      };
+    } catch {
+      return { autoStartOnBoot: false, runInBackground: true };
+    }
+  }
+
+  async saveAppSettings(settings: AppSettings): Promise<void> {
+    await this.writeAtomicBson(
+      this.appSettingsPath,
+      settings as unknown as Record<string, unknown>
     );
   }
 

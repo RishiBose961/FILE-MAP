@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  // ArrowLeftRight,
   CheckCircle2,
   Database,
   Download,
@@ -9,12 +10,14 @@ import {
   FolderOpen,
   FolderTree,
   HardDrive,
+  Layers,
   LayoutGrid,
   LayoutTemplate,
   List,
   LogOut,
   MapPin,
   Plus,
+  Power,
   RefreshCw,
   RotateCcw,
   Search,
@@ -27,6 +30,7 @@ import {
   WifiOff,
 } from 'lucide-react';
 import type {
+  AppSettings,
   BlueprintRect,
   ExcelImportRow,
   FileMapData,
@@ -58,6 +62,7 @@ import { CheckoutModal } from './components/CheckoutModal';
 import { ExcelImportModal } from './components/ExcelImportModal';
 import { OfficeBlueprint } from './components/OfficeBlueprint';
 import { SyncModal } from './components/SyncModal';
+import { BulkPlaceModal } from './components/BulkPlaceModal';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
@@ -86,6 +91,7 @@ export function App() {
   const [selectedLocationId, setSelectedLocationId] = useState<string | null>(null);
 
   const [excelModalOpen, setExcelModalOpen] = useState(false);
+  const [bulkPlaceOpen, setBulkPlaceOpen] = useState(false);
   const [syncModalOpen, setSyncModalOpen] = useState(false);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>({
     role: 'standalone',
@@ -97,6 +103,10 @@ export function App() {
     pendingCount: 0,
     lastSyncedAt: null,
     lastError: null,
+  });
+  const [appSettings, setAppSettings] = useState<AppSettings>({
+    autoStartOnBoot: false,
+    runInBackground: true,
   });
 
   const [locationModal, setLocationModal] = useState<{
@@ -125,15 +135,17 @@ export function App() {
     let mounted = true;
     async function init() {
       try {
-        const [loaded, info, sStatus] = await Promise.all([
+        const [loaded, info, sStatus, aSettings] = await Promise.all([
           window.fileMapApi.loadData(),
           window.fileMapApi.getStorageInfo(),
           window.fileMapApi.getSyncStatus(),
+          window.fileMapApi.getAppSettings(),
         ]);
         if (!mounted) return;
         setData(loaded);
         setStorageInfo(info);
         setSyncStatus(sStatus);
+        setAppSettings(aSettings);
         if (loaded.locations.length > 0) {
           setSelectedLocationId(loaded.locations[0].id);
         }
@@ -430,6 +442,72 @@ export function App() {
     }
   };
 
+  const handleToggleAutoStart = async () => {
+    const next: AppSettings = {
+      ...appSettings,
+      autoStartOnBoot: !appSettings.autoStartOnBoot,
+    };
+    const saved = await window.fileMapApi.setAppSettings(next);
+    setAppSettings(saved);
+    showToast(
+      saved.autoStartOnBoot
+        ? 'Background start on system boot: ON'
+        : 'Background start on system boot: OFF'
+    );
+  };
+
+  const handleToggleBackground = async () => {
+    const next: AppSettings = {
+      ...appSettings,
+      runInBackground: !appSettings.runInBackground,
+    };
+    const saved = await window.fileMapApi.setAppSettings(next);
+    setAppSettings(saved);
+    showToast(
+      saved.runInBackground
+        ? 'Minimize to tray on close: ON'
+        : 'Minimize to tray on close: OFF'
+    );
+  };
+
+  const handleBulkPlaceConfirm = ({
+    matchedFileIds,
+    locationId,
+    positionDetail,
+  }: {
+    matchedFileIds: Set<string>;
+    locationId: string | null;
+    positionDetail: string;
+  }) => {
+    const now = new Date().toISOString();
+    const updatedFiles = data.files.map((f) => {
+      if (!matchedFileIds.has(f.id)) return f;
+      return {
+        ...f,
+        locationId,
+        positionDetail: positionDetail || f.positionDetail,
+        updatedAt: now,
+      };
+    });
+    setBulkPlaceOpen(false);
+    persistFiles(
+      updatedFiles,
+      `Updated "Stored On" for ${matchedFileIds.size} files`
+    );
+  };
+
+  // const handleSwapAllFileNamesAndNumbers = () => {
+  //   if (data.files.length === 0) return;
+  //   const now = new Date().toISOString();
+  //   const swapped = data.files.map((f) => ({
+  //     ...f,
+  //     title: f.fileCode || f.title,
+  //     fileCode: f.title.toUpperCase(),
+  //     updatedAt: now,
+  //   }));
+  //   persistFiles(swapped, 'Swapped File Name & File Number in files.bson');
+  // };
+
   const handleUploadExcel = () => {
     setExcelModalOpen(true);
   };
@@ -525,15 +603,17 @@ export function App() {
         <table className="w-full border-collapse text-left text-sm">
           <thead>
             <tr className="border-b border-border bg-slate-50/80 text-[11.5px] font-semibold uppercase tracking-wider text-muted-foreground">
+              <th className="px-4 py-3">S.No</th>
               <th className="px-4 py-3">File Number</th>
               <th className="px-4 py-3">File Name</th>
+              
               <th className="px-4 py-3">Stored On</th>
               <th className="px-4 py-3">Status</th>
               <th className="px-4 py-3 text-right">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
-            {list.map((file) => {
+            {list.map((file, idx) => {
               const isCheckedOut = file.status === 'checked_out';
               const isArchived = file.status === 'archived';
 
@@ -545,6 +625,10 @@ export function App() {
                     isCheckedOut && 'bg-amber-50/30'
                   )}
                 >
+                  <td className="px-4 py-3 align-top whitespace-nowrap text-xs font-medium text-muted-foreground">
+                    {file.sno || idx + 1}
+                  </td>
+
                   <td className="px-4 py-3 align-top whitespace-nowrap">
                     {file.fileCode ? (
                       <span className="inline-block rounded-md bg-primary/10 px-2 py-0.5 text-xs font-bold tracking-wide text-primary">
@@ -558,8 +642,8 @@ export function App() {
                   <td className="px-4 py-3 align-top">
                     <div className="font-semibold text-foreground">{file.title}</div>
                     <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
-                      <span>{file.category}</span>
-                      {file.notes && <span>• {file.notes}</span>}
+                      {/* <span>{file.category}</span>
+                      {file.notes && <span>• {file.notes}</span>} */}
                     </div>
                   </td>
 
@@ -652,7 +736,7 @@ export function App() {
                 {file.fileCode}
               </span>
             )}
-            <h3 className="text-[15px] font-semibold leading-snug text-foreground break-words">
+            <h3 className="text-[15px] font-semibold leading-snug text-foreground wrap-break-word">
               {file.title}
             </h3>
           </div>
@@ -960,6 +1044,66 @@ export function App() {
             )}
           </div>
 
+          {/* Background & Auto-Start Switches */}
+          <div className="flex flex-col gap-2 rounded-xl border border-border bg-slate-50 p-3">
+            <div className="flex items-center justify-between gap-2">
+              <span className="inline-flex items-center gap-1.5 text-[11.5px] font-semibold text-slate-700">
+                <Power
+                  size={13}
+                  className={
+                    appSettings.autoStartOnBoot ? 'text-primary' : 'text-slate-400'
+                  }
+                />
+                Start on Boot
+              </span>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={appSettings.autoStartOnBoot}
+                onClick={handleToggleAutoStart}
+                className={cn(
+                  'inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10.5px] font-bold transition-colors cursor-pointer',
+                  appSettings.autoStartOnBoot
+                    ? 'bg-primary text-white'
+                    : 'bg-slate-200 text-slate-600'
+                )}
+              >
+                <span
+                  className={cn(
+                    'h-2 w-2 rounded-full',
+                    appSettings.autoStartOnBoot ? 'bg-white' : 'bg-slate-400'
+                  )}
+                />
+                {appSettings.autoStartOnBoot ? 'ON' : 'OFF'}
+              </button>
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[11px] text-muted-foreground">
+                Keep in Tray on Close
+              </span>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={appSettings.runInBackground}
+                onClick={handleToggleBackground}
+                className={cn(
+                  'inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10.5px] font-bold transition-colors cursor-pointer',
+                  appSettings.runInBackground
+                    ? 'bg-emerald-600 text-white'
+                    : 'bg-slate-200 text-slate-600'
+                )}
+              >
+                <span
+                  className={cn(
+                    'h-2 w-2 rounded-full',
+                    appSettings.runInBackground ? 'bg-white' : 'bg-slate-400'
+                  )}
+                />
+                {appSettings.runInBackground ? 'ON' : 'OFF'}
+              </button>
+            </div>
+          </div>
+
           {/* Separate BSON Storage Card */}
           <div className="flex flex-col gap-2 rounded-xl border border-border bg-slate-50 p-3">
           <div className="flex items-center justify-between text-xs font-semibold text-slate-700">
@@ -1061,6 +1205,17 @@ export function App() {
           </div>
 
           <div className="flex items-center gap-2">
+            {data.files.length > 0 && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setBulkPlaceOpen(true)}
+                title="Update Stored On for multiple file numbers at once"
+              >
+                <Layers size={15} className="text-primary" />
+                Bulk Place
+              </Button>
+            )}
             <Button
               type="button"
               variant="outline"
@@ -1132,6 +1287,18 @@ export function App() {
               </div>
 
               <div className="flex items-center gap-2.5">
+                {/* {data.files.length > 0 && (
+                  <Button
+                    type="button"
+                    size="xs"
+                    variant="outline"
+                    onClick={handleSwapAllFileNamesAndNumbers}
+                    title="Swap File Name and File Number for all files"
+                  >
+                    <ArrowLeftRight size={13} />
+                    Swap Name ↔ Number
+                  </Button>
+                )} */}
                 {activeTab === 'files' && (
                   <div className="inline-flex gap-1 rounded-lg bg-slate-200/80 p-1">
                     {(
@@ -1455,6 +1622,15 @@ export function App() {
           onConfirm={handleConfirmExcelImport}
           onNotify={showToast}
           onClose={() => setExcelModalOpen(false)}
+        />
+      )}
+
+      {bulkPlaceOpen && (
+        <BulkPlaceModal
+          files={data.files}
+          locations={data.locations}
+          onConfirm={handleBulkPlaceConfirm}
+          onClose={() => setBulkPlaceOpen(false)}
         />
       )}
 

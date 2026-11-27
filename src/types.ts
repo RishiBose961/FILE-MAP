@@ -100,6 +100,11 @@ export interface SyncConfig {
   port: number;
 }
 
+export interface AppSettings {
+  autoStartOnBoot: boolean;
+  runInBackground: boolean;
+}
+
 export type SyncOperation =
   | { id: string; timestamp: string; type: 'upsert_file'; file: OfficeFile }
   | { id: string; timestamp: string; type: 'delete_file'; fileId: string }
@@ -132,6 +137,8 @@ export interface FileMapApi {
   openDataFolder: () => Promise<void>;
   getSyncStatus: () => Promise<SyncStatus>;
   setSyncConfig: (config: SyncConfig) => Promise<SyncStatus>;
+  getAppSettings: () => Promise<AppSettings>;
+  setAppSettings: (settings: AppSettings) => Promise<AppSettings>;
   downloadFromAdmin: () => Promise<{ ok: boolean; error?: string; data?: FileMapData }>;
   syncNow: () => Promise<{ ok: boolean; syncedCount: number; error?: string; data?: FileMapData }>;
   onDataUpdated: (cb: (data: FileMapData) => void) => () => void;
