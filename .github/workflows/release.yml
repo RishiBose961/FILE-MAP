@@ -1,0 +1,72 @@
+name: Build & Release FileMap
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (e.g. v1.0.0)"
+        required: true
+        default: "v1.0.0"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform_flag: --win
+          - os: macos-latest
+            platform_flag: --mac
+          - os: ubuntu-latest
+            platform_flag: --linux
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Typecheck and build Vite + Electron
+        run: |
+          bun run tsc --noEmit
+          bun run vite build
+
+      - name: Package with electron-builder
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: npx electron-builder ${{ matrix.platform_flag }} --publish never
+
+      - name: Upload Release Assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag || github.ref_name }}
+          name: FileMap ${{ inputs.tag || github.ref_name }}
+          generate_release_notes: true
+          files: |
+            release/**/*.exe
+            release/**/*.dmg
+            release/**/*.AppImage
+            release/**/*.blockmap
+            release/**/latest*.yml
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -3,6 +3,9 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
+  "trustedDependencies": [
+    "electron"
+  ],
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build && electron-builder",
