@@ -67,6 +67,41 @@ Toggle **Start on Boot** (`ON` / `OFF`) and **Keep in Tray on Close** (`ON` / `O
 
 ---
 
+## Workflow Diagrams
+
+### 1. Daily Office File Workflow
+
+```mermaid
+flowchart LR
+    A["1. Draw Blueprint<br/>(Rooms, Doors, Cupboards)"] --> B["2. Add or Upload Excel<br/>(S.No, File No, File Name)"]
+    B --> C["3. Assign 'Stored On'<br/>(Single or Bulk Place)"]
+    C --> D["4. Search & Locate<br/>(Table or Blueprint Highlight)"]
+    D --> E["5. Take Out / Put Back<br/>(Track Who Has It)"]
+```
+
+- **Draw Blueprint**: Map your real office rooms, doors, windows, and cupboards once (saved in `blueprint.bson`).
+- **Add / Upload Excel**: Import hundreds of files in seconds from `.xlsx`/`.csv`, or add them one by one (saved in `files.bson`).
+- **Assign Stored On**: Place files into cupboards/shelves individually or in bulk using comma-separated File Numbers.
+- **Search & Track**: Type any File Number or Name to see its exact cupboard, or mark it as **Taken Out** when someone borrows it.
+
+### 2. Admin & Employee LAN Sync Workflow
+
+```mermaid
+flowchart TD
+    EMP["Employee PC<br/>(Makes Changes)"] --> LOCAL["Save Locally<br/>(blueprint.bson / files.bson)"]
+    LOCAL --> QUEUE["Add to sync-queue.bson"]
+    QUEUE --> CHECK{"Is Admin PC<br/>Online?"}
+    CHECK -- "Yes" --> PUSH["Push Updates to Admin<br/>(HTTP + BSON Sync)"]
+    PUSH --> ADMIN["Admin Server<br/>Updates Master BSON & UI"]
+    CHECK -- "No (Offline)" --> WAIT["Keep Safely in Queue<br/>(Retry every 8s)"]
+    WAIT --> CHECK
+```
+
+- **Local First**: Employee changes are saved immediately on their PC so work never stops.
+- **Offline Queue**: If the Admin PC is turned off or disconnected, changes wait safely in `sync-queue.bson` and automatically sync as soon as Admin comes back online.
+
+---
+
 ## Development & Build
 
 ```bash
