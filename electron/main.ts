@@ -1,4 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
+import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as XLSX from 'xlsx';
@@ -162,7 +163,8 @@ function registerIpcHandlers() {
     worksheet['!cols'] = [{ wch: 8 }, { wch: 36 }, { wch: 16 }]
     const workbook = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Files')
-    XLSX.writeFile(workbook, result.filePath)
+    const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' }) as Buffer
+    await fs.writeFile(result.filePath, buffer)
 
     return { canceled: false, filePath: result.filePath }
   })
@@ -185,7 +187,8 @@ function registerIpcHandlers() {
 
     const filePath = result.filePaths[0]
     try {
-      const workbook = XLSX.readFile(filePath)
+      const buffer = await fs.readFile(filePath)
+      const workbook = XLSX.read(buffer, { type: 'buffer' })
       const firstSheetName = workbook.SheetNames[0]
       if (!firstSheetName) {
         return { canceled: false, filePath, error: 'Excel file has no sheets.' }
